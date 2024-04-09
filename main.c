@@ -62,8 +62,20 @@ intrare din director într-un mod unic și să evidențieze modificările efectu
 #include <dirent.h>
 #include <sys/stat.h>
 
+// declar lstat extern
+int lstat(const char *path, struct stat *buf);
+
 void creeaza_actualizeaza_snapshot(char *caleDirector) { 
-    // trebuie facuta verificare daca e director
+    struct stat st;
+    if(lstat(caleDirector, &st) != 0) { // primesc eroare la lstat daca nu o declar extern
+        perror("Eroare la obtinerea informatiilor din director!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if(!S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "%s nu este director!\n", caleDirector);
+        exit(EXIT_FAILURE);
+    }
 
     DIR *director = opendir(caleDirector);
     if (director == NULL) {
@@ -91,7 +103,7 @@ void creeaza_actualizeaza_snapshot(char *caleDirector) {
         snprintf(caleIntrare, sizeof(caleIntrare), "%s/%s", caleDirector, intrare->d_name);
 
         struct stat informatii;
-        if (stat(caleIntrare, &informatii) != 0) { // lstat
+        if (lstat(caleIntrare, &informatii) != 0) { // lstat
             perror("Eroare la obtinerea informatiilor despre intrare");
             fclose(fisierSnapshot);
             closedir(director);
@@ -101,7 +113,7 @@ void creeaza_actualizeaza_snapshot(char *caleDirector) {
         fprintf(fisierSnapshot, "%s: ", intrare->d_name);
         fprintf(fisierSnapshot, "dimensiune=%ld, mod=%o, ultima modificare=%I64d\n", informatii.st_size, informatii.st_mode, informatii.st_mtime);
 
-        if (S_ISREG(informatii.st_mode)) {
+        if (S_ISDIR(informatii.st_mode)) {
             if (strcmp(intrare->d_name, ".") != 0 && strcmp(intrare->d_name, "..") != 0) {
                 creeaza_actualizeaza_snapshot(caleIntrare); // apelez recursiv functia pe un fisier, nu pe un director
             }
