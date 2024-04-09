@@ -1,4 +1,5 @@
 /*
+
 Subiectul proiectului este monitorizarea modificarilor aparute in directoare de-a lungul timpului, prin realizarea de capturi (snapshots) la
 cererea utilizatorului.
 
@@ -54,6 +55,7 @@ este actualizat la fiecare rulare a programului pentru a reflecta modificările 
 
 Nota: Selectarea metadatelor este complet la latitudinea utilizatorului. Este important să includem informații care să diferențieze fiecare
 intrare din director într-un mod unic și să evidențieze modificările efectuate.
+
 */
 
 #include <stdio.h>
@@ -65,7 +67,7 @@ intrare din director într-un mod unic și să evidențieze modificările efectu
 // declar lstat extern
 int lstat(const char *path, struct stat *buf);
 
-void creeaza_actualizeaza_snapshot(char *caleDirector) { 
+void creeaza_actualizeaza_snapshot(char *caleDirector, char *caleDirectorIesire) { 
     struct stat st;
     if(lstat(caleDirector, &st) != 0) { // primesc eroare la lstat daca nu o declar extern
         perror("Eroare la obtinerea informatiilor din director!\n");
@@ -84,7 +86,7 @@ void creeaza_actualizeaza_snapshot(char *caleDirector) {
     }
 
     char caleSnapshot[256];
-    snprintf(caleSnapshot, sizeof(caleSnapshot), "%s/Snapshot.txt", caleDirector);
+    snprintf(caleSnapshot, sizeof(caleSnapshot), "%s/Snapshot.txt", caleDirectorIesire);
 
     FILE *fisierSnapshot = fopen(caleSnapshot, "w"); // schimbare
     if (fisierSnapshot == NULL) {
@@ -115,7 +117,9 @@ void creeaza_actualizeaza_snapshot(char *caleDirector) {
 
         if (S_ISDIR(informatii.st_mode)) {
             if (strcmp(intrare->d_name, ".") != 0 && strcmp(intrare->d_name, "..") != 0) {
-                creeaza_actualizeaza_snapshot(caleIntrare); // apelez recursiv functia pe un fisier, nu pe un director
+                char caleNoua[512];
+                snprintf(caleNoua, sizeof(caleNoua), "%s/%s", caleDirectorIesire, intrare->d_name);
+                creeaza_actualizeaza_snapshot(caleIntrare, caleNoua); // apelez recursiv functia pe un fisier, nu pe un director
             }
         }
     }
@@ -125,20 +129,64 @@ void creeaza_actualizeaza_snapshot(char *caleDirector) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        printf("Utilizare: %s <director>\n", argv[0]);
-        return EXIT_FAILURE;
+    if(argc < 3 || argc > 12) {
+        printf("Utilizare: %s <director1> <director2> ... <director10> <director_iesire>\n", argv[0]);
+        exit(EXIT_FAILURE);
     }
 
-    creeaza_actualizeaza_snapshot(argv[1]);
+    char *directoare[10];
+    int nr_directoare = 0;
+    int i;
+    for(i = 1; i <= 10; i++) {
+        if(i < argc - 1) {
+            struct stat st;
+            if(lstat(argv[i], &st) != 0) {
+                perror("Eroare la obtinerea informatiilor din director!\n");
+                exit(EXIT_FAILURE);
+            }
+            if(!S_ISDIR(st.st_mode)) {
+                fprintf(stderr, "%s nu este director!\n", argv[i]);
+                exit(EXIT_FAILURE);
+            }
+            int j;
+            for(j = 0; j < nr_directoare; j++) {
+                if(strcmp(argv[i], directoare[j]) == 0) {
+                    fprintf(stderr, "Directorul %s este un duplicat!\n", argv[i]);
+                    exit(EXIT_FAILURE);
+                }
+            }
+            directoare[nr_directoare++] = argv[i];
+        }
+    }
+
+    struct stat st_out;
+    if(lstat(argv[argc - 1], &st_out) != 0) {
+        perror("Eroare la obtinerea informatiilor din directorul de iesire!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if(!S_ISDIR(st_out.st_mode)) {
+        fprintf(stderr, "%s nu este director!\n", argv[argc - 1]);
+        exit(EXIT_FAILURE);
+    }
+
+    for(i = 0; i < nr_directoare; i++) {
+        creeaza_actualizeaza_snapshot(directoare[i], argv[argc - 1]);
+    }
 
     return 0;
 }
 
-/* 
-Cerinta saptamana 2 de proiect:
+/*
+
+Cerinta S2 de proiect:
 
 Se actualizeazaa functionalitatea programului astfel incat sa primeasca un numar nespecificat de argumente
-dar nu mai mult de 10, cu mentiunea ca niciun argument nu se va repeta. Programul proceseaza doar directoarele (de completat)
-Programul primeste un argument suplimentar care reprez directorul de iesire in care vor fi stocate toate snapshot-urile.
+dar nu mai mult de 10, cu mentiunea ca niciun argument nu se va repeta. 
+
+Programul proceseaza doar directoarele (de completat).
+
+Programul primeste un argument suplimentar care reprez directorul de iesire in care vor fi stocate toate 
+snapshot-urile.
+
 */
