@@ -1,2 +1,0 @@
-Fisier3.txt: dimensiune=0, mod=100666, ultima modificare=1712042276
-Snapshot.txt: dimensiune=0, mod=100666, ultima modificare=1712088845
