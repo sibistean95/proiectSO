@@ -155,13 +155,15 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    for (int i = 0; i < numDirectories; i++) {
-        char snapshotPath[MAX_PATH_LENGTH];
-        snprintf(snapshotPath, sizeof(snapshotPath), "%s/Snapshot.txt", outputDir);
-        createSnapshot(directories[i], outputDir);
-        char newSnapshotPath[MAX_PATH_LENGTH];
-        snprintf(newSnapshotPath, sizeof(newSnapshotPath), "%s/Snapshot.txt", outputDir);
-        compareAndUpdateSnapshots(snapshotPath, newSnapshotPath);
+    // procesul parinte asteapta ca toate procesele copil sa sa termine
+    int status;
+    pid_t wpid;
+    while((wpid = wait(&status)) > 0) {
+        if(WIFEXITED(status)) {
+            printf("Child Process %d terminated with PID %d and exit code %d.\n", (int)wpid, (int)wpid, WEXITSTATUS(status));
+        } else {
+            printf("Child Process %d terminated abnormally.\n", (int)wpid);
+        }
     }
 
     return EXIT_SUCCESS;
