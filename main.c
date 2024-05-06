@@ -144,6 +144,17 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    for(int i = 0; i < numDirectories; i++) {
+        pid_t child_pid = fork();   // creare proces copil nou
+        if(child_pid == 0) {
+            createSnapshot(directories[i], outputDir);
+            exit(EXIT_SUCCESS);     // terminarea procesului copil cu succes
+        } else if(child_pid < 0) {      // cazul de eroare al apelului sistem fork
+            perror("Error forking!");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     for (int i = 0; i < numDirectories; i++) {
         char snapshotPath[MAX_PATH_LENGTH];
         snprintf(snapshotPath, sizeof(snapshotPath), "%s/Snapshot.txt", outputDir);
