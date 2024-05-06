@@ -4,6 +4,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 #define MAX_PATH_LENGTH 1024
 #define MAX_ENTRIES 1000
@@ -48,6 +50,10 @@ void createSnapshot(const char *dirPath, const char *outputDir) {
             char entryPath[MAX_PATH_LENGTH];
             snprintf(entryPath, sizeof(entryPath), "%s/%s", dirPath, entry->d_name);
             entries[numEntries++] = getEntryMetadata(entryPath);
+
+            if (S_ISDIR(entries[numEntries-1].mode)) {
+                createSnapshot(entryPath, outputDir);
+            }
         }
     }
 
@@ -71,7 +77,7 @@ void createSnapshot(const char *dirPath, const char *outputDir) {
 
     fclose(snapshotFile);
 
-    printf("Snapshot created successfully!\n");
+    printf("Snapshot created successfully for directory: %s\n", dirPath);
 }
 
 void compareAndUpdateSnapshots(const char *oldSnapshotPath, const char *newSnapshotPath) {
@@ -145,6 +151,7 @@ int main(int argc, char *argv[]) {
     }
 
     for(int i = 0; i < numDirectories; i++) {
+        printf("Creating snapshot for directory: %s\n", directories[i]);
         pid_t child_pid = fork();   // creare proces copil nou
         if(child_pid == 0) {
             createSnapshot(directories[i], outputDir);
@@ -155,7 +162,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // procesul parinte asteapta ca toate procesele copil sa sa termine
+    // procesul parinte asteapta ca toate procesele copil sa se termine
     int status;
     pid_t wpid;
     while((wpid = wait(&status)) > 0) {
