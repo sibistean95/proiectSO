@@ -1,0 +1,15 @@
+Name: DirectorPrincipal/Subdirector2
+Mode: 40755
+Size: 4096 bytes
+Last modified: Tue Apr 23 23:40:24 2024
+
+Name: DirectorPrincipal/Fisier4.txt
+Mode: 100644
+Size: 16 bytes
+Last modified: Sat May  4 15:39:07 2024
+
+Name: DirectorPrincipal/Subdirector1
+Mode: 40755
+Size: 4096 bytes
+Last modified: Tue Apr 23 23:40:31 2024
+

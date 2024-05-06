@@ -8,15 +8,13 @@
 #define MAX_PATH_LENGTH 1024
 #define MAX_ENTRIES 1000
 
-// Structura pentru a stoca metadatele fiecărei intrări din director
 typedef struct {
     char name[MAX_PATH_LENGTH];
     mode_t mode;
     off_t size;
-    time_t mtime; // Timpul ultimei modificări
+    time_t mtime;
 } EntryMetadata;
 
-// Funcția pentru a obține metadatele unei intrări din director folosind lstat()
 EntryMetadata getEntryMetadata(const char *path) {
     EntryMetadata metadata;
     struct stat st;
@@ -34,19 +32,16 @@ EntryMetadata getEntryMetadata(const char *path) {
     return metadata;
 }
 
-// Funcția pentru a crea un snapshot al directorului specificat
-void createSnapshot(const char *dirPath) {
+void createSnapshot(const char *dirPath, const char *outputDir) {
     EntryMetadata entries[MAX_ENTRIES];
     int numEntries = 0;
 
-    // Deschide directorul
     DIR *dir = opendir(dirPath);
     if (dir == NULL) {
         perror("Error opening directory");
         exit(EXIT_FAILURE);
     }
 
-    // Parcurge fiecare intrare din director
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
@@ -56,40 +51,107 @@ void createSnapshot(const char *dirPath) {
         }
     }
 
-    // Închide directorul
     closedir(dir);
 
-    // Creează fișierul de snapshot
-    FILE *snapshotFile = fopen("Snapshot.txt", "w");
+    char snapshotFilePath[MAX_PATH_LENGTH];
+    snprintf(snapshotFilePath, sizeof(snapshotFilePath), "%s/Snapshot.txt", outputDir);
+    FILE *snapshotFile = fopen(snapshotFilePath, "w");
     if (snapshotFile == NULL) {
         perror("Error creating snapshot file");
         exit(EXIT_FAILURE);
     }
 
-    // Scrie metadatele în fișierul de snapshot
     for (int i = 0; i < numEntries; i++) {
         fprintf(snapshotFile, "Name: %s\n", entries[i].name);
         fprintf(snapshotFile, "Mode: %o\n", entries[i].mode);
         fprintf(snapshotFile, "Size: %ld bytes\n", entries[i].size);
-        fprintf(snapshotFile, "Last modified: %s", ctime(&entries[i].mtime)); // Convertește timpul într-un șir de caractere
+        fprintf(snapshotFile, "Last modified: %s", ctime(&entries[i].mtime));
         fprintf(snapshotFile, "\n");
     }
 
-    // Închide fișierul de snapshot
     fclose(snapshotFile);
 
     printf("Snapshot created successfully!\n");
 }
 
+void compareAndUpdateSnapshots(const char *oldSnapshotPath, const char *newSnapshotPath) {
+    FILE *oldSnapshotFile = fopen(oldSnapshotPath, "r");
+    FILE *newSnapshotFile = fopen(newSnapshotPath, "r");
+
+    if (oldSnapshotFile == NULL || newSnapshotFile == NULL) {
+        perror("Error opening snapshot files");
+        exit(EXIT_FAILURE);
+    }
+
+    char oldLine[MAX_PATH_LENGTH];
+    char newLine[MAX_PATH_LENGTH];
+    while (fgets(oldLine, sizeof(oldLine), oldSnapshotFile) != NULL && fgets(newLine, sizeof(newLine), newSnapshotFile) != NULL) {
+        if (strcmp(oldLine, newLine) != 0) {
+            fclose(oldSnapshotFile);
+
+            FILE *tempFile = fopen(oldSnapshotPath, "w");
+            if (tempFile == NULL) {
+                perror("Error creating temporary file");
+                exit(EXIT_FAILURE);
+            }
+
+            rewind(newSnapshotFile);
+            int c;
+            while ((c = fgetc(newSnapshotFile)) != EOF) {
+                fputc(c, tempFile);
+            }
+
+            fclose(tempFile);
+            fclose(newSnapshotFile);
+
+            printf("Snapshot updated successfully!\n");
+            return;
+        }
+    }
+
+    fclose(oldSnapshotFile);
+    fclose(newSnapshotFile);
+
+    printf("Snapshots are identical. No update needed.\n");
+}
+
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        printf("Usage: %s <directory_path>\n", argv[0]);
+    if (argc < 3 || argc > 12) {
+        printf("Usage: %s -o <output_directory> <directory1> <directory2> ... (up to 10 directories)\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    char *dirPath = argv[1];
+    char *outputDir = NULL;
+    char *directories[10];
+    int numDirectories = 0;
 
-    createSnapshot(dirPath);
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 < argc) {
+                outputDir = argv[i + 1];
+                i++;
+            } else {
+                printf("Error: Missing output directory path.\n");
+                return EXIT_FAILURE;
+            }
+        } else {
+            directories[numDirectories++] = argv[i];
+        }
+    }
+
+    if (outputDir == NULL) {
+        printf("Error: Missing output directory.\n");
+        return EXIT_FAILURE;
+    }
+
+    for (int i = 0; i < numDirectories; i++) {
+        char snapshotPath[MAX_PATH_LENGTH];
+        snprintf(snapshotPath, sizeof(snapshotPath), "%s/Snapshot.txt", outputDir);
+        createSnapshot(directories[i], outputDir);
+        char newSnapshotPath[MAX_PATH_LENGTH];
+        snprintf(newSnapshotPath, sizeof(newSnapshotPath), "%s/Snapshot.txt", outputDir);
+        compareAndUpdateSnapshots(snapshotPath, newSnapshotPath);
+    }
 
     return EXIT_SUCCESS;
 }
