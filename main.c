@@ -6,6 +6,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <libgen.h>
+#include <errno.h>
 
 #define MAX_PATH_LENGTH 1024
 #define MAX_ENTRIES 1000
@@ -59,8 +61,11 @@ void createSnapshot(const char *dirPath, const char *outputDir) {
 
     closedir(dir);
 
+    char *dirName = basename(strdup(dirPath));
+
     char snapshotFilePath[MAX_PATH_LENGTH];
-    snprintf(snapshotFilePath, sizeof(snapshotFilePath), "%s/Snapshot.txt", outputDir);
+    snprintf(snapshotFilePath, sizeof(snapshotFilePath), "%s/Snapshot_%s.txt", outputDir, dirName);
+
     FILE *snapshotFile = fopen(snapshotFilePath, "w");
     if (snapshotFile == NULL) {
         perror("Error creating snapshot file");
@@ -80,54 +85,61 @@ void createSnapshot(const char *dirPath, const char *outputDir) {
     printf("Snapshot created successfully for directory: %s\n", dirPath);
 }
 
-void compareAndUpdateSnapshots(const char *oldSnapshotPath, const char *newSnapshotPath) {
-    FILE *oldSnapshotFile = fopen(oldSnapshotPath, "r");
-    FILE *newSnapshotFile = fopen(newSnapshotPath, "r");
-
-    if (oldSnapshotFile == NULL || newSnapshotFile == NULL) {
-        perror("Error opening snapshot files");
+void analyzeFile(const char *filePath, const char *isolatedDir) {
+    struct stat st;
+    if (lstat(filePath, &st) == -1) {
+        perror("Error getting file metadata");
         exit(EXIT_FAILURE);
     }
 
-    char oldLine[MAX_PATH_LENGTH];
-    char newLine[MAX_PATH_LENGTH];
-    while (fgets(oldLine, sizeof(oldLine), oldSnapshotFile) != NULL && fgets(newLine, sizeof(newLine), newSnapshotFile) != NULL) {
-        if (strcmp(oldLine, newLine) != 0) {
-            fclose(oldSnapshotFile);
+    if ((st.st_mode & S_IRWXU) == 0 && (st.st_mode & S_IRWXG) == 0 && (st.st_mode & S_IRWXO) == 0) {
+        printf("Analyzing file: %s\n", filePath);
 
-            FILE *tempFile = fopen(oldSnapshotPath, "w");
-            if (tempFile == NULL) {
-                perror("Error creating temporary file");
-                exit(EXIT_FAILURE);
-            }
+        pid_t child_pid = fork();
+        if (child_pid == 0) {
+            char scriptPath[MAX_PATH_LENGTH];
+            snprintf(scriptPath, sizeof(scriptPath), "%s/verify_for_malicious.sh", isolatedDir);
 
-            rewind(newSnapshotFile);
-            int c;
-            while ((c = fgetc(newSnapshotFile)) != EOF) {
-                fputc(c, tempFile);
-            }
+            execl(scriptPath, "verify_for_malicious.sh", filePath, NULL);
 
-            fclose(tempFile);
-            fclose(newSnapshotFile);
-
-            printf("Snapshot updated successfully!\n");
-            return;
+            perror("Error executing script");
+            exit(EXIT_FAILURE);
+        } else if (child_pid < 0) {
+            perror("Error forking");
+            exit(EXIT_FAILURE);
         }
     }
+}
 
-    fclose(oldSnapshotFile);
-    fclose(newSnapshotFile);
+void moveFile(const char *filePath, const char *isolatedDir) {
+    struct stat st;
+    if (lstat(filePath, &st) == -1) {
+        perror("Error getting file metadata");
+        exit(EXIT_FAILURE);
+    }
 
-    printf("Snapshots are identical. No update needed.\n");
+    if ((st.st_mode & S_IRWXU) == 0 && (st.st_mode & S_IRWXG) == 0 && (st.st_mode & S_IRWXO) == 0) {
+        char *fileName = basename(strdup(filePath));
+        char newFilePath[MAX_PATH_LENGTH];
+        snprintf(newFilePath, sizeof(newFilePath), "%s/%s", isolatedDir, fileName);
+
+        if (rename(filePath, newFilePath) != 0) { 
+            perror("Error moving file");
+            exit(EXIT_FAILURE);
+        }
+
+        printf("File %s moved to %s\n", filePath, newFilePath);
+    }
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 3 || argc > 12) {
-        printf("Usage: %s -o <output_directory> <directory1> <directory2> ... (up to 10 directories)\n", argv[0]);
+    if (argc < 5 || argc > 14) {
+        printf("Usage: %s -o <output_directory> -s <isolated_space_dir> <directory1> <directory2> ... (up to 10 directories)\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     char *outputDir = NULL;
+    char *isolatedDir = NULL;
     char *directories[10];
     int numDirectories = 0;
 
@@ -140,38 +152,92 @@ int main(int argc, char *argv[]) {
                 printf("Error: Missing output directory path.\n");
                 return EXIT_FAILURE;
             }
+        } else if (strcmp(argv[i], "-s") == 0) {
+            if (i + 1 < argc) {
+                isolatedDir = argv[i + 1];
+                i++;
+            } else {
+                printf("Error: Missing isolated space directory path.\n");
+                return EXIT_FAILURE;
+            }
         } else {
             directories[numDirectories++] = argv[i];
         }
     }
 
-    if (outputDir == NULL) {
-        printf("Error: Missing output directory.\n");
+    if (outputDir == NULL || isolatedDir == NULL) {
+        printf("Error: Missing output directory or isolated space directory.\n");
         return EXIT_FAILURE;
     }
 
-    for(int i = 0; i < numDirectories; i++) {
+    for (int i = 0; i < numDirectories; i++) {
         printf("Creating snapshot for directory: %s\n", directories[i]);
         pid_t child_pid = fork();   // creare proces copil nou
-        if(child_pid == 0) {
+        if (child_pid == 0) {
             createSnapshot(directories[i], outputDir);
             exit(EXIT_SUCCESS);     // terminarea procesului copil cu succes
-        } else if(child_pid < 0) {      // cazul de eroare al apelului sistem fork
+        } else if (child_pid < 0) {      // cazul de eroare al apelului sistem fork
             perror("Error forking!");
             exit(EXIT_FAILURE);
         }
     }
 
-    // procesul parinte asteapta ca toate procesele copil sa se termine
+    // procesul parinte așteaptă ca toate procesele copil să se termine
     int status;
     pid_t wpid;
-    while((wpid = wait(&status)) > 0) {
-        if(WIFEXITED(status)) {
+    while ((wpid = wait(&status)) > 0) {
+        if (WIFEXITED(status)) {
             printf("Child Process %d terminated with PID %d and exit code %d.\n", (int)wpid, (int)wpid, WEXITSTATUS(status));
         } else {
             printf("Child Process %d terminated abnormally.\n", (int)wpid);
         }
     }
 
+    for (int i = 0; i < numDirectories; i++) {
+        char snapshotPath[MAX_PATH_LENGTH];
+        snprintf(snapshotPath, sizeof(snapshotPath), "%s/Snapshot_%s.txt", outputDir, basename(strdup(directories[i])));
+        printf("Analyzing files in directory %s\n", directories[i]);
+
+        FILE *snapshotFile = fopen(snapshotPath, "r");
+        if (snapshotFile == NULL) {
+            perror("Error opening snapshot file");
+            exit(EXIT_FAILURE);
+        }
+
+        char line[MAX_PATH_LENGTH];
+        while (fgets(line, sizeof(line), snapshotFile) != NULL) {
+            if (strncmp(line, "Name:", 5) == 0) {
+                char filePath[MAX_PATH_LENGTH];
+                sscanf(line + 6, "%s", filePath);
+                analyzeFile(filePath, isolatedDir);
+            }
+        }
+
+        fclose(snapshotFile);
+    }
+
+    // mutarea fisierele malitioase in directorul safe
+    for (int i = 0; i < numDirectories; i++) {
+        char snapshotPath[MAX_PATH_LENGTH];
+        snprintf(snapshotPath, sizeof(snapshotPath), "%s/Snapshot_%s.txt", outputDir, basename(strdup(directories[i])));
+        FILE *snapshotFile = fopen(snapshotPath, "r");
+        if (snapshotFile == NULL) {
+            perror("Error opening snapshot file");
+            exit(EXIT_FAILURE);
+        }
+
+        char line[MAX_PATH_LENGTH];
+        while (fgets(line, sizeof(line), snapshotFile) != NULL) {
+            if (strncmp(line, "Name:", 5) == 0) {
+                char filePath[MAX_PATH_LENGTH];
+                sscanf(line + 6, "%s", filePath);
+                moveFile(filePath, isolatedDir);
+            }
+        }
+
+        fclose(snapshotFile);
+    }
+
     return EXIT_SUCCESS;
 }
+
