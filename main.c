@@ -98,7 +98,8 @@ void analyzeFile(const char *filePath, const char *isolatedDir) {
         pid_t child_pid = fork();
         if (child_pid == 0) {
             char scriptPath[MAX_PATH_LENGTH];
-            snprintf(scriptPath, sizeof(scriptPath), "%s/verify_for_malicious.sh", isolatedDir);
+            snprintf(scriptPath, sizeof(scriptPath), "./verify_for_malicious.sh"); // Utilizează calea relativă
+            printf("Script path: %s\n", scriptPath); // Afișează calea scriptului
 
             execl(scriptPath, "verify_for_malicious.sh", filePath, NULL);
 
@@ -240,4 +241,3 @@ int main(int argc, char *argv[]) {
 
     return EXIT_SUCCESS;
 }
-
